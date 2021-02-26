@@ -1,0 +1,56 @@
+var moment = require('moment')
+var fs = require('fs')
+
+function classifyOEE(res_x, res_period) {
+    let classification = res_x != 0  ? (
+        res_x > 3 ? 'ef' : 'sl'                 // full speed here i defined as values 4 - 5
+     ): ( res_period > 15 ? 'uu' : 'ms')
+     return classification
+}
+
+
+
+let data = JSON.parse(fs.readFileSync('src/raw_data.txt').toString())
+let copy = [...data]
+
+data.forEach((e, i) => {
+    copy[i]['index'] = i
+    if (i!=0) {
+        let prev = data[i-1];
+        let elapsed = moment(e.time).diff(moment(prev.time), 'seconds', true)
+        if (e.val['0'] == 0) { copy[i]['timeDiff'] = elapsed + prev['timeDiff'] }
+        else copy[i]['timeDiff'] =  elapsed
+        copy[i]['classification'] = classifyOEE(e.val['0'], moment(copy[i]['timeDiff'], 'minutes'))
+    } else {
+        copy[i]['timeDiff'] = 0 
+        copy[i]['classification'] = classifyOEE(e.val['0'], 0)
+    };
+});
+
+let oee = {}
+copy.forEach((e, i) => {
+    if (Object.keys(oee).includes(e.classification)) {
+        oee[e.classification] ++ 
+    } else {
+        oee[e.classification] = 1
+    }
+})
+
+// based on the graph in the question set, I assume for UU to aggregate under availability, MS and SL under performance, and EF under effective
+let total = data.length
+let finalOEE = (oee.uu * (oee.ms + oee.sl) * 100**3 / (total**3))
+
+
+
+let response = 
+{
+    'overall': {
+        'availability': oee.uu/total*100,
+        'performance': (oee.ms + oee.sl)/total*100,
+        'quality': 100,
+        'final_effective': finalOEE,
+    }, 
+    'oee': [...data]
+}
+
+fs.writeFileSync('response.txt', JSON.stringify(response, null, 2))
